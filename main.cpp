@@ -5,6 +5,9 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <pthread.h>
+#include <fstream>
+
+using namespace std;
 
 #define BUF_SIZE 1024
 #define SMALL_BUF 100
@@ -84,12 +87,12 @@ void* request_handler(void *arg) {
 void send_data(FILE* fp, char* ct, char* file_name) {
     char protocol[]="HTTP/1.0 200 OK\r\n";
     char server[]="Server: Linux Web Server \r\n";
-    char cnt_len[]="Content-length:2048\r\n";
+    char cnt_len[]="Content-length: 40000\r\n";
     char cnt_type[SMALL_BUF];
     char buf[BUF_SIZE];
     FILE* send_file;
 
-    sprintf(cnt_type, "Content-type:%s\r\n\r\n", ct);
+    sprintf(cnt_type, "Content-type: %s\r\n\r\n", ct);
     send_file=fopen(file_name, "r");
     if (send_file==NULL) {
         send_error(fp);
@@ -103,10 +106,24 @@ void send_data(FILE* fp, char* ct, char* file_name) {
     fputs(cnt_type, fp);
 
     /* 传输请求数据 */
-    while (fgets(buf, BUF_SIZE, send_file)!=NULL) {
-        fputs(buf, fp);
+    if (!strcmp(ct,"image/png")) {
+        ifstream rc(file_name, std::ifstream::binary);
+        rc.seekg(0, std::ios::end);
+        int contentLength = rc.tellg();
+        rc.seekg(0, std::ios::beg);
+        char *content = new char[contentLength + 1];
+        content[contentLength] = 0;
+        rc.read(content, contentLength);
+        rc.close();
+        fwrite(content, reinterpret_cast<size_t>(content), 1, fp);
         fflush(fp);
+    } else {
+        while (fgets(buf, BUF_SIZE, send_file)!=NULL) {
+            fputs(buf, fp);
+            fflush(fp);
+        }
     }
+
     fflush((fp));
     fclose(fp);
 }
@@ -118,10 +135,12 @@ char* content_type(char* file) {
     strtok(file_name, ".");
     strcpy(extension, strtok(NULL, "."));
 
-    if (!strcmp(extension, "html")||!strcmp(extension, "htm"))
+    if (!strcmp(extension, "png"))
+        return "image/png";
+    else if (!strcmp(extension, "html")||!strcmp(extension, "htm"))
         return "text/html";
     else
-        return "text/plain";
+        return "image/png";
 }
 
 void send_error(FILE* fp) {
@@ -129,7 +148,8 @@ void send_error(FILE* fp) {
     char server[]="Server: Linux Web Server \r\n";
     char cnt_len[]="Content-length:2048\r\n";
     char cnt_type[]="Content-type:text/html\r\n\r\n";
-    char content[]="<html><head><title>NETWORK</title></head>"
+    char content[]="<html><head><title>NETWORK</title>"
+                   "<meta http-equiv=Content-Type content=\"text/html;charset=utf-8\"></head>"
                    "<body><font size+=5>发生错误！查看请求文件名和请求方式！"
                    "</font></body></html>";
 
@@ -137,6 +157,7 @@ void send_error(FILE* fp) {
     fputs(server, fp);
     fputs(cnt_len, fp);
     fputs(cnt_type, fp);
+    fputs(content, fp);
     fflush(fp);
 }
 
